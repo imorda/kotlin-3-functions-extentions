@@ -9,31 +9,30 @@ fun interface Cancellable {
 }
 
 abstract class AbstractValue<T> : Value<T> {
-    val subscribers: MutableSet<Callable<T>> = mutableSetOf()
+    private val subscribers: MutableSet<Callable<T>> = mutableSetOf()
 
-    override fun observe(subscriber: Callable<T>): CancelHandle<T> {
+    override fun observe(subscriber: Callable<T>): Cancellable {
         subscribers.add(subscriber)
-        return CancelHandle(this, subscriber)
-    }
-
-    class CancelHandle<T>(val receiver: AbstractValue<T>, val subscriber: Callable<T>) : Cancellable {
-        override fun cancel() {
-            if (!receiver.subscribers.remove(subscriber)) {
+        return Cancellable {
+            if (!subscribers.remove(subscriber)) {
                 throw InvalidCancelHandle("Observer is already cancelled")
             }
         }
     }
+
+    // No logging logic in case of an error, so no action on failure.
+    protected fun callEvent(value: T) = subscribers.forEach { it.runCatching { this(value) } }
 }
 
 class MutableValue<T>(initial: T) : AbstractValue<T>() {
-    override fun observe(subscriber: Callable<T>): CancelHandle<T> {
+    override fun observe(subscriber: Callable<T>): Cancellable {
         subscriber(value)
         return super.observe(subscriber)
     }
 
     override var value: T = initial
         set(newVal) {
-            subscribers.forEach { it(newVal) }
+            callEvent(newVal)
             field = newVal
         }
 }
